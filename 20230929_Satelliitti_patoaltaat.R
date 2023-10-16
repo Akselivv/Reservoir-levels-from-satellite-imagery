@@ -20,23 +20,78 @@ light_orange <- "#FFF1E0"
 
 colors <- c(dark_green, light_green, dark_blue, light_blue, dark_red, light_red, yellow, orange, light_orange)
 
+calculate_nominal_water_extent <- FALSE
+save <- FALSE
+read <- TRUE
 
 #load("Lauvastol_data/nominal_water.Rdata")
 #nominal_water_sum <- readRDS("Lauvastol_data/nominal_water_sum.rds")
-load("nominal_water.Rdata")
-nominal_water_sum <- readRDS("nominal_water_sum.rds")
 
 #coords <- c(6.6819011, 59.49226283, 6.717937099999999, 59.50659287)
 coords <- c(7.015902, 59.287278, 6.725416, 59.441193)
-
-## SOURCE PYTHON CODE WITH EVALSCRIPT AS INPUT ##
 
 cacheEnv <- new.env()
 options("reticulate.engine.environment" = cacheEnv)
 
 assign("coords", coords, envir = cacheEnv)
 
-datevec <- seq(ymd('2019-01-01'),ymd('2023-09-01'), by = '1 month')
+if (calculate_nominal_water_extent){
+  
+  library(raster)
+  
+  dates <- c(as.Date("2023-08-01"), as.Date("2023-09-01"))
+  
+  assign("dates", dates, envir = cacheEnv)
+  
+  reticulate::source_python("satelliitti_patoaltaat.py", envir = cacheEnv)
+  
+  #data <- reticulate::py$sh_statistics[1]
+  
+  data <- reticulate::py$response
+  array <- reticulate::py$image_arr
+  
+  mat <- as.matrix(array[,,2])
+  mat1 <- as.matrix(array[,,2])
+  mat1[mat1 != 0] <- 1
+  
+  r <- raster(mat)
+  rc <- clump(r, directions = 4)
+  rcmat <- as.matrix(rc)
+  rcmat[,1024]
+  clump_id <- names(sort(-table(c(rcmat[,1024], rcmat[1024,]))))[1]
+  
+  
+  rcmat[rcmat != clump_id] <- NA
+  rcmat[rcmat == clump_id] <- 1
+  
+  image(mat1,useRaster=TRUE)
+  image(rcmat,useRaster=TRUE)
+  
+  nominal_water <- which(rcmat == 1, arr.ind = TRUE)
+  
+  class(nominal_water)
+  
+  sum <- sum(mat[nominal_water])
+  
+}
+
+if (save) {
+  
+  save(nominal_water, file = "nominal_water.Rdata")
+  saveRDS(sum, "nominal_water_sum.rds")
+  
+}
+
+## SOURCE PYTHON CODE WITH EVALSCRIPT AS INPUT ##
+
+if (load) {
+  
+  load("nominal_water.Rdata")
+  nominal_water_sum <- readRDS("nominal_water_sum.rds")
+  
+}
+
+datevec <- seq(ymd('2019-01-01'),ymd('2023-09-01'), by = '2 weeks')
 datevec <- c(datevec, ymd("2023-09-29"))
 datevec %<>% as.character()
 
