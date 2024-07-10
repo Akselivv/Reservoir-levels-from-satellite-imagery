@@ -1,148 +1,146 @@
-setwd("//home.org.aalto.fi/valivia1/data/Documents/GitHub/Satelliittiprojekti")
-
-options(scipen=999)
-
 library(lubridate)
 library(magrittr)
 library(raster)
 library(ggplot2)
 library(tidyverse)
+library(reticulate)
 
-dark_green <- "#234721"
-light_green <- "#AED136"
-dark_blue <- "#393594"
-light_blue <- "#8482BD"
-dark_red <- "#721D41"
-light_red <- "#CC8EA0"
-yellow <- "#FBE802"
-orange <- "#F16C13"
-light_orange <- "#FFF1E0"
+#Your working directory should contain the file of reservoir coordinates (reservoir_coords.xlsx)
+setwd("your_working_directory")
 
-colors <- c(dark_green, light_green, dark_blue, light_blue, dark_red, light_red, yellow, orange, light_orange)
+#Your python installation and python virtual environment, this code uses reticulate.
+use_python("User/Documents/.virtualenvs/r-reticulate/Scripts/python.exe")
+use_virtualenv("User/Documents/.virtualenvs/r-reticulate")
 
-calculate_nominal_water_extent <- FALSE
-save <- FALSE
-read <- TRUE
+#Note that the following python libraries have to be installed in the python environment for the code to work:
+  #oauthlib and requests-oauthlib
+  #PIL
+  #io
+  #numpy
+  #shapely
+  #matplotlib
+#They have to be usually installed separately with reticulate::py_install()
 
-#load("Lauvastol_data/nominal_water.Rdata")
-#nominal_water_sum <- readRDS("Lauvastol_data/nominal_water_sum.rds")
-
-#coords <- c(6.6819011, 59.49226283, 6.717937099999999, 59.50659287)
-coords <- c(7.015902, 59.287278, 6.725416, 59.441193)
+calculate_nominal_water_extent <- TRUE
+build_ts <- TRUE
+#Both should be true
 
 cacheEnv <- new.env()
 options("reticulate.engine.environment" = cacheEnv)
 
-assign("coords", coords, envir = cacheEnv)
+reservoir_data <- as.data.frame(readxl::read_excel("./reservoir_coords.xlsx")) %>%
+  set_colnames(c("name", "coords", "coords1", "coords2", "notes")) %>%
+  mutate(name = gsub(" \\(", "_", name)) %>%
+  mutate(name = gsub("\\)", "", name)) %>%
+  mutate(name = gsub(", ", "_", name)) %>%
+  mutate(name = gsub("/", "_", name)) %>%
+  mutate(name = gsub("-", "_", name)) %>%
+  mutate(name = gsub(" ", "_", name)) %>%
+  mutate(nominal_water_sum = 0) %>%
+  mutate(water_pixel_sum = 0)
 
-if (calculate_nominal_water_extent){
+collect <- reservoir_data
+
+collect <- separate_wider_delim(collect, cols = coords1 , delim = ", ", names = c("ycoord1", "xcoord1"))
+collect <- separate_wider_delim(collect, cols = coords2 , delim = ", ", names = c("ycoord2", "xcoord2"))
+
+collect <- collect %>%
+  mutate(ycoord1 = as.numeric(ycoord1)) %>%
+  mutate(ycoord2 = as.numeric(ycoord2)) %>%
+  mutate(xcoord1 = as.numeric(xcoord1)) %>%
+  mutate(xcoord2 = as.numeric(xcoord2)) %>%
+  mutate(size = ycoord2 - ycoord1 + xcoord2 - xcoord1)
+
+starttime <- Sys.time()
+
+nominal_water_extent <- collect
+
+for (k in 1:nrow(nominal_water_extent)) {
   
-  library(raster)
+  rowK <- as.data.frame(nominal_water_extent[c(k),])
   
-  dates <- c(as.Date("2023-08-01"), as.Date("2023-09-01"))
+  coords <- c(c(rowK$xcoord1, rowK$ycoord1, rowK$xcoord2, rowK$ycoord2))
   
-  assign("dates", dates, envir = cacheEnv)
+  assign("coords", coords, envir = cacheEnv)
   
-  reticulate::source_python("satelliitti_patoaltaat.py", envir = cacheEnv)
+  ## SOURCE PYTHON CODE WITH EVALSCRIPT AS INPUT ##
+
+  if (calculate_nominal_water_extent){
+    
+    #The highest nominal water extent is likely to occurr in spring/early summer. 
+    #For the sample years, reservoir levels were generally highest in 2020.
+    dates <- c(as.Date("2020-10-01"), as.Date("2020-11-01"))
+    
+    assign("dates", dates, envir = cacheEnv)
+    
+    source_python(".satellite_reservoir.py", envir = cacheEnv)
+    
+    image_arr <- reticulate::py$image_arr
+    
+    mat_raw <- as.matrix(image_arr[,,2])
+    mat <- as.matrix(image_arr[,,2])
+    
+    mat[mat != 0] <- 1
+    rc <- clump(raster(mat), directions = 4)
+    rcmat <- as.matrix(rc)
+    clump_id <- names(sort(-table(c(rcmat[,1024], rcmat[1024,]))))[1]
+    rcmat[rcmat != clump_id] <- NA
+    rcmat[rcmat == clump_id] <- 1
+    nominal_water <- which(rcmat == 1, arr.ind = TRUE)
+    nominal_water_sum <- sum(mat_raw[nominal_water])
+    water_pixel_sum <- sum(mat[nominal_water])
+    
+    if (FALSE){
+      image(mat_raw,useRaster=TRUE)
+      image(mat,useRaster=TRUE)
+      image(rcmat,useRaster=TRUE)
+    }
+    
+    nominal_water_extent$nominal_water_sum[k] <- nominal_water_sum
+    nominal_water_extent$water_pixel_sum[k] <- water_pixel_sum
+    
+  }
   
-  #data <- reticulate::py$sh_statistics[1]
-  
-  data <- reticulate::py$response
-  array <- reticulate::py$image_arr
-  
-  mat <- as.matrix(array[,,2])
-  mat1 <- as.matrix(array[,,2])
-  mat1[mat1 != 0] <- 1
-  
-  r <- raster(mat)
-  rc <- clump(r, directions = 4)
-  rcmat <- as.matrix(rc)
-  rcmat[,1024]
-  clump_id <- names(sort(-table(c(rcmat[,1024], rcmat[1024,]))))[1]
-  
-  
-  rcmat[rcmat != clump_id] <- NA
-  rcmat[rcmat == clump_id] <- 1
-  
-  image(mat1,useRaster=TRUE)
-  image(rcmat,useRaster=TRUE)
-  
-  nominal_water <- which(rcmat == 1, arr.ind = TRUE)
-  
-  class(nominal_water)
-  
-  sum <- sum(mat[nominal_water])
+  if (build_ts) {
+    
+    datevec <- seq(ymd('2020-01-01'),ymd('2023-12-31'), by = '1 month')
+    datevec %<>% as.character()
+    
+    timeseries <- data.frame(end_month =datevec[-1], water_level_absolute = numeric(length(datevec[-1])), 
+                             water_level_relative = numeric(length(datevec[-1])))
+    
+    for (i in 2:length(datevec)) { 
+      
+      dates <- c(datevec[i-1], datevec[i])
+      assign("dates", dates, envir = cacheEnv)
+      
+      assign(paste("dates", as.character(i-1), sep = "_"), dates, envir = cacheEnv)
+      
+      source_python(".satellite_reservoir.py", envir = cacheEnv)
+      
+      array <- reticulate::py$image_arr
+      matrix <- as.matrix(array[,,2])
+      sum <- sum(matrix[nominal_water])
+
+      #Save intermediary data to a temporary folder
+      saveRDS(array, paste0("tempdata/satellite_waterlevel_array_", as.character(collect[k,1]), "_", as.character(datevec[i]), ".rds"))
+      saveRDS(matrix, paste0("tempdata/satellite_waterlevel_matrix_", as.character(collect[k,1]), "_", as.character(datevec[i]), ".rds"))
+      saveRDS(sum, paste0("tempdata/satellite_waterlevel_sum_", as.character(collect[k,1]), "_", as.character(datevec[i]), ".rds"))
+      
+      timeseries$water_level_absolute[i-1] <- sum
+      timeseries$water_level_relative[i-1] <- sum/nominal_water_sum
+      
+      print(i/length(datevec))
+      
+    }
+    
+  }
+
+  data.table::fwrite(timeseries, paste0("./timeseries_", as.character(collect[k,1]), ".csv))
   
 }
 
-if (save) {
-  
-  save(nominal_water, file = "nominal_water.Rdata")
-  saveRDS(sum, "nominal_water_sum.rds")
-  
-}
+endtime <- Sys.time()
 
-## SOURCE PYTHON CODE WITH EVALSCRIPT AS INPUT ##
+print(endtime - starttime)
 
-if (load) {
-  
-  load("nominal_water.Rdata")
-  nominal_water_sum <- readRDS("nominal_water_sum.rds")
-  
-}
-
-datevec <- seq(ymd('2019-01-01'),ymd('2023-09-01'), by = '2 weeks')
-datevec <- c(datevec, ymd("2023-09-29"))
-datevec %<>% as.character()
-
-timeseries <- data.frame(end_month =datevec[-1], water_level_absolute = numeric(length(datevec[-1])), 
-                         water_level_relative = numeric(length(datevec[-1])))
-
-for (i in 2:length(datevec)) { 
-  
-  dates <- c(datevec[i-1], datevec[i])
-  
-  assign(paste("dates", as.character(i-1), sep = "_"), dates, envir = cacheEnv)
-  
-  reticulate::source_python("satelliitti_patoaltaat.py", envir = cacheEnv)
-  
-  array <- reticulate::py$image_arr
-  matrix <- as.matrix(array[,,2])
-  sum <- sum(matrix[nominal_water])
-  
-  assign(paste("array", as.character(i-1), sep = "_"), array)
-  assign(paste("matrix", as.character(i-1), sep = "_"), matrix)
-  assign(paste("sum", as.character(i-1), sep = "_"), sum)
-  
-  timeseries$water_level_absolute[i-1] <- sum
-  timeseries$water_level_relative[i-1] <- sum/nominal_water_sum
-  
-  print(i/length(datevec))
-
-}
-
-print(timeseries)
-
-timeseries$end_month[nrow(timeseries)] <- "2023-10-01"
-
-plot(x = lubridate::ymd(timeseries$end_month), y = timeseries$water_level_relative, type = "l")
-
-timeseries %>%
-  ggplot(aes(x = lubridate::ymd(end_month), y = water_level_relative)) + 
-  geom_line(aes(), color = "red" , lwd = 1.2) + 
-  theme_minimal() + 
-  ggtitle("Veden määrä kuukausittain. Normalisoitu vuoden 2023 elokuun suhteen.") + 
-  xlab("kuukausi") + 
-  ylab("veden määrä, normalisoitu")
-
-timeseries %>%
-  mutate(vuosi = substr(as.character(end_month), 1, 4)) %>%
-  mutate(kuukausi = substr(as.character(end_month), 6, 7)) %>%
-  ggplot(aes(x = as.character(kuukausi), y = water_level_relative, group = vuosi), color = colors) +
-  geom_line(aes(color = vuosi), lwd = 1.2) + 
-  theme_minimal() + 
-  ggtitle("Veden määrä kuukausittain. Normalisoitu vuoden 2023 elokuun suhteen.") + 
-  xlab("kuukausi") + 
-  ylab("veden määrä, normalisoitu")
-
-write.csv(timeseries, "satelliitti_vesimäärä.csv", row.names = FALSE)
