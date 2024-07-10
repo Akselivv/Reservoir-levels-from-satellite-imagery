@@ -1,7 +1,7 @@
 import os
 
 print(os.getcwd())
-os.chdir("//home.org.aalto.fi/valivia1/data/Documents/GitHub/Satelliittiprojekti")
+os.chdir("myWorkingDirectory")
 
 from oauthlib.oauth2 import BackendApplicationClient
 from requests_oauthlib import OAuth2Session
@@ -23,7 +23,7 @@ for l in lines:
     as_list = l.split(", ")
     secrets.append(as_list[0].replace("\n", ""))
 
-# sentinelhub-py package
+#Load sentinel hub client id and secret from separate text file where the client id is on the first line and the secret is on the second
 sh_client_id = secrets[0]
 sh_client_secret = secrets[1] 
 
@@ -35,26 +35,6 @@ oauth = OAuth2Session(client=client)
 token = oauth.fetch_token(token_url='https://services.sentinel-hub.com/oauth/token',
                           client_id=sh_client_id, client_secret=sh_client_secret)
 
-with open("Norja1.wkt", "r") as f:
-    dam_wkt = f.read()
-
-dam_nominal = shapely.wkt.loads(dam_wkt)
-
-# inflate the BBOX
-inflate_bbox = 0.1
-minx, miny, maxx, maxy = dam_nominal.bounds
-
-delx = maxx - minx
-dely = maxy - miny
-minx = minx - delx * inflate_bbox
-maxx = maxx + delx * inflate_bbox
-miny = miny - dely * inflate_bbox
-maxy = maxy + dely * inflate_bbox
-
-#bbox = [7.015902, 59.287278, 6.725416, 59.441193]
- 
-#start_date = "2023-08-01"
-#end_date = "2023-08-30"
 
 bbox = r.coords
 start_date = r.dates[0]
@@ -243,24 +223,12 @@ response = oauth.request(
     "POST", url_request, headers=headers_request, json = json_request
 )
 
-#import rasterio
-#import rasterio.plot
-
-#tiff = io.BytesIO(response.content)
-#rasterio.plot.show(tiff)
-
 # read the image as numpy array
 image_arr = np.array(Image.open(io.BytesIO(response.content)))
 arr2 = Image.open(io.BytesIO(response.content))
 arr3 = io.BytesIO(response.content)
 
-#print(response.content)
-
 plt.figure(figsize=(16,16))
 plt.axis('off')
 plt.tight_layout()
 plt.imshow(image_arr)
-
-#from xarray import open_rasterio
-#toplot = open_rasterio(response.content)
-#toplot = toplot[0]
