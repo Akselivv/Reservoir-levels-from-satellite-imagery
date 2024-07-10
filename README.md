@@ -1,10 +1,10 @@
-# Satellite project, part 2
+# Reservoir levels from satellite data
 
  Detecting the amount of water in reservoirs from satellite imagery
 
 ## Description of the algorithm
 
-The only inputs required for the algorithm are four coordinates, which specify a rectangular box around a water reservoir. The user can also specify the start and end points for the time series the algorithm collects, as well as the time between observations. Areas that experience a high level of cloudiness require a higher time between osbervations, with 2 weeks being somewhat of a minimum in the Nordic countries. 
+The only inputs required for the algorithm are four coordinates, which specify a rectangular box around a water reservoir. The user can also specify the start and end points for the time series the algorithm collects, as well as the time between observations. Areas that experience a high level of cloudiness require a higher time between osbervations, with 2 weeks being somewhat of a minimum in the Nordic countries. The repository includes coordinates for all reservoirs in the NO5 pricing zone of western Norway.
 
 Using the algorithm requires an account and credentials to the Sentinel Hub API, which the user can insert directly into the script or store in a text file (the default).
 
